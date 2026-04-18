@@ -1,60 +1,77 @@
-# 第2章: 環境構築 — AIを活用してテスト環境を整える
+# 第2章: 環境構築
 
 ## 2.1 必要なツール
 
-本教材で使用するツールは以下の通りです。
+| ツール | 用途 | インストール方法 |
+|--------|------|------------------|
+| GCC / G++ | C/C++ コンパイラ | `sudo apt install build-essential` |
+| CMake (3.14+) | ビルドシステム | `sudo apt install cmake` |
+| Google Test | テストフレームワーク | CMake FetchContent で自動取得 |
+| FFF (fff.h) | フェイク関数生成 | ヘッダファイル1つを配置 |
 
-| ツール | 用途 | バージョン目安 |
-|-------|------|-------------|
-| CMake | ビルドシステム | 3.29以上 |
-| GCC/G++ | C/C++コンパイラ | 11以上 |
-| Google Test | テストフレームワーク | 1.14.0 |
-| FFF | フェイク関数フレームワーク | 最新 |
-| Git | バージョン管理 | 2.x |
-| AI ツール | コード生成支援 | GitHub Copilot等 |
-
-## 2.2 プロジェクト構成の理解
-
-本教材のプロジェクトは以下の構成になっています。
+## 2.2 プロジェクト構成
 
 ```mermaid
 graph TD
-    Root[googletestTry/] --> CMakeRoot[CMakeLists.txt<br>ルートのビルド定義]
-    Root --> Src[src/]
-    Root --> Test[Test/]
+    ROOT["📁 プロジェクトルート"] --> SRC["📁 src/"]
+    ROOT --> TEST["📁 Test/"]
+    ROOT --> DOCS["📁 docs/"]
+    ROOT --> CMAKE_ROOT["📄 CMakeLists.txt"]
     
-    Src --> APP[APP/]
-    Src --> DRV[DRV/]
-    Src --> CMakeSrc[CMakeLists.txt<br>ソースのビルド定義]
+    SRC --> APP["📁 app/ — アプリケーション層"]
+    SRC --> HAL["📁 hal/ — HAL層"]
+    SRC --> BEFORE["📁 before/ — 悪い例（教材用）"]
+    SRC --> CMAKE_SRC["📄 CMakeLists.txt"]
     
-    APP --> APPINC[INC/add.h]
-    APP --> APPSRC[SRC/add.c]
+    APP --> TEMP_H["📄 temperature.h/c — 純粋関数"]
+    APP --> MON_H["📄 temp_monitor.h/c — オーケストレータ"]
     
-    DRV --> DRVINC[INC/sub.h]
-    DRV --> DRVSRC[SRC/drv1.c]
+    HAL --> ADC_H["📄 hal_adc.h/c — ADC抽象化"]
+    HAL --> GPIO_H["📄 hal_gpio.h/c — GPIO抽象化"]
     
-    Test --> CMakeTest[CMakeLists.txt<br>テストのビルド定義]
-    Test --> TestApp[test_app.cpp]
-    Test --> TestDrv[test_drv.cpp]
-    Test --> FFF[fff.h]
+    TEST --> TEST_APP["📄 test_app.cpp — 純粋関数テスト"]
+    TEST --> TEST_DRV["📄 test_drv.cpp — FFF統合テスト"]
+    TEST --> FFF_H["📄 fff.h — フェイク生成ヘッダ"]
+    TEST --> CMAKE_TEST["📄 CMakeLists.txt"]
     
-    style CMakeRoot fill:#fff3e0
-    style CMakeSrc fill:#fff3e0
-    style CMakeTest fill:#fff3e0
-    style TestApp fill:#e8f5e9
-    style TestDrv fill:#e8f5e9
-    style FFF fill:#e8f5e9
+    style APP fill:#e8f5e9
+    style HAL fill:#fff3e0
+    style BEFORE fill:#ffcdd2
+    style TEST fill:#e3f2fd
 ```
 
-### ディレクトリの役割
+### レイヤ分離の考え方
 
-- **`src/APP/`**: アプリケーション層のコード。ビジネスロジックを担当
-- **`src/DRV/`**: ドライバ層のコード。ハードウェアアクセスを担当
-- **`Test/`**: テストコード。Google TestとFFFを使ったテストファイル
+```mermaid
+graph TB
+    subgraph AppLayer["アプリケーション層"]
+        direction LR
+        TEMP["temperature.c\n（純粋関数）"]
+        MON["temp_monitor.c\n（オーケストレータ）"]
+    end
+    subgraph HalLayer["HAL層（ハードウェア抽象化）"]
+        direction LR
+        ADC["hal_adc.c"]
+        GPIO["hal_gpio.c"]
+    end
+    subgraph HW["ハードウェア"]
+        direction LR
+        SENSOR["温度センサ"]
+        LED["LED"]
+    end
+    
+    MON --> TEMP
+    MON --> ADC
+    MON --> GPIO
+    ADC --> SENSOR
+    GPIO --> LED
+    
+    style AppLayer fill:#e8f5e9,stroke:#2e7d32
+    style HalLayer fill:#fff3e0,stroke:#ef6c00
+    style HW fill:#ffcdd2,stroke:#c62828
+```
 
-この**APP（アプリケーション層）とDRV（ドライバ層）の分離**は、組み込み開発において非常に重要な設計判断です。後の章で学ぶポートアダプタパターンの基礎となります。
-
-> **命名規約について**: 本プロジェクトの既存コードでは `doubleForFake` のようなキャメルケース（camelCase）を使用していますが、第6章以降の新しいサンプルコードでは `read_temperature` のようなスネークケース（snake_case）を使用しています。組み込みC開発ではスネークケースが一般的ですが、既存のプロジェクトに合わせることも重要です。
+> **ポイント**: アプリケーション層は HAL のヘッダファイル（インターフェース）のみに依存する。HAL の実装（.c）はリンク時に差し替え可能。
 
 ## 2.3 CMakeによるビルドシステム
 
@@ -62,19 +79,22 @@ graph TD
 
 ```mermaid
 graph TD
-    ROOT["CMakeLists.txt ルート\nプロジェクト設定\nenable_testing"] --> SRC_CMAKE["src/CMakeLists.txt\nプロダクションコードのビルド"]
-    ROOT --> TEST_CMAKE["Test/CMakeLists.txt\nテストコードのビルド"]
+    ROOT["CMakeLists.txt ルート\nプロジェクト設定\nenable_testing"] --> SRC_CMAKE["src/CMakeLists.txt\nAppLibrary + HalLibrary"]
+    ROOT --> TEST_CMAKE["Test/CMakeLists.txt\nテストバイナリ"]
     TEST_CMAKE --> FETCH["FetchContent\nGoogle Test v1.14.0\n自動ダウンロード"]
-    SRC_CMAKE --> PROD_OBJ["add.o, drv1.o\nプロダクションオブジェクト"]
+    SRC_CMAKE --> APP_OBJ["AppLibrary\ntemperature.o\ntemp_monitor.o"]
+    SRC_CMAKE --> HAL_OBJ["HalLibrary\nhal_adc.o\nhal_gpio.o"]
     FETCH --> GTEST_LIB["gtest ライブラリ"]
-    TEST_CMAKE --> TEST_OBJ["test_app.o, test_drv.o\nテストオブジェクト"]
-    PROD_OBJ --> EXE["テスト実行バイナリ"]
-    GTEST_LIB --> EXE
-    TEST_OBJ --> EXE
+    TEST_CMAKE --> TEST1["test_temperature\n純粋関数テスト"]
+    TEST_CMAKE --> TEST2["test_temp_monitor\nFFF統合テスト"]
+    APP_OBJ --> TEST1
+    GTEST_LIB --> TEST1
+    GTEST_LIB --> TEST2
     
     style ROOT fill:#fff3e0
     style FETCH fill:#e3f2fd
-    style EXE fill:#e8f5e9
+    style TEST1 fill:#e8f5e9
+    style TEST2 fill:#e8f5e9
 ```
 
 ### ルートCMakeLists.txt
@@ -95,7 +115,29 @@ set(CMAKE_C_STANDARD_REQUIRED YES)
 
 **ポイント**: `LANGUAGES C CXX` で、CとC++の両方を使うことを宣言しています。組み込みCのプロダクションコードはCで書き、テストコードはC++（Google Test）で書くという構成です。
 
-### テストのCMakeLists.txt
+### src/CMakeLists.txt
+
+```cmake
+# === アプリケーション層 ===
+set(APP_SOURCES
+    app/temperature.c
+    app/temp_monitor.c
+)
+add_library(AppLibrary STATIC ${APP_SOURCES})
+target_include_directories(AppLibrary PUBLIC app hal)
+
+# === HAL 層 ===
+set(HAL_SOURCES
+    hal/hal_adc.c
+    hal/hal_gpio.c
+)
+add_library(HalLibrary STATIC ${HAL_SOURCES})
+target_include_directories(HalLibrary PUBLIC hal)
+
+target_link_libraries(AppLibrary PUBLIC HalLibrary)
+```
+
+### Test/CMakeLists.txt
 
 ```cmake
 include(FetchContent)
@@ -104,127 +146,82 @@ FetchContent_Declare(
   URL https://github.com/google/googletest/archive/refs/tags/v1.14.0.zip
 )
 FetchContent_MakeAvailable(googletest)
+
+# 純粋関数テスト（フェイク不要）
+add_executable(test_temperature test_app.cpp)
+target_link_libraries(test_temperature gtest_main AppLibrary)
+gtest_discover_tests(test_temperature)
+
+# FFF 統合テスト（HAL をフェイクに差し替え）
+add_executable(test_temp_monitor test_drv.cpp)
+target_link_libraries(test_temp_monitor gtest_main)
+target_include_directories(test_temp_monitor PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/app
+    ${CMAKE_SOURCE_DIR}/src/hal
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+target_sources(test_temp_monitor PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/app/temp_monitor.c
+    ${CMAKE_SOURCE_DIR}/src/app/temperature.c
+)
+gtest_discover_tests(test_temp_monitor)
 ```
 
-`FetchContent` を使って Google Test を自動的にダウンロードします。これにより、事前のインストール作業が不要になります。
+> **重要**: `test_temp_monitor` は HalLibrary をリンクしません。代わりに FFF がテストファイル内で HAL 関数のフェイク実装を生成するため、リンカエラーにならずにテストできます。
 
-## 2.4 AIを活用した環境構築
-
-### AIへの依頼の仕方
-
-環境構築は、AIに支援を依頼する好適な場面です。ただし、いくつかの注意点があります。
-
-```mermaid
-graph TD
-    A[自分の環境情報を整理] --> B[AIに具体的に依頼]
-    B --> C[生成されたスクリプトを確認]
-    C --> D{理解できるか？}
-    D -->|Yes| E[実行する]
-    D -->|No| F[AIに説明を求める]
-    F --> D
-    E --> G{動作するか？}
-    G -->|Yes| H[完了]
-    G -->|No| I[エラーログをAIに提示]
-    I --> B
-    style A fill:#e3f2fd
-    style C fill:#fff8e1
-    style D fill:#fce4ec
-```
-
-**AIへの依頼例（良い例）**:
-```
-CMake 3.29 + GCC 11 + Google Test 1.14.0 の環境で、
-C言語のプロダクションコード（src/以下）を
-C++のテストコード（Test/以下）からテストする
-CMakeLists.txtを作成してください。
-FetchContentでGoogle Testを取得する構成にしてください。
-```
-
-**AIへの依頼例（悪い例）**:
-```
-テストできるようにして
-```
-
-### 人間が確認すべきポイント
-
-AIが生成した環境構築スクリプトに対して、以下を確認しましょう。
-
-1. **コンパイラバージョン** — ターゲットのCコンパイラと互換性があるC標準か
-2. **リンク設定** — テストバイナリにプロダクションコードが正しくリンクされているか
-3. **インクルードパス** — ヘッダファイルが正しく参照されているか
-4. **`extern "C"` の扱い** — C++からCの関数を呼ぶ場合に必要
-
-## 2.5 ビルドと実行
-
-### ビルド手順
-
-```bash
-# ビルドディレクトリを作成
-mkdir build && cd build
-
-# CMakeの設定（ジェネレート）
-cmake ..
-
-# ビルド
-cmake --build .
-
-# テスト実行
-ctest --output-on-failure
-```
-
-### 実行結果の例
-
-テストが成功すると、以下のような出力が得られます。
-
-```
-[==========] Running 2 tests from 1 test suite.
-[----------] Global test environment set-up.
-[----------] 2 tests from add_test
-[ RUN      ] add_test.addOK
-[       OK ] add_test.addOK (0 ms)
-[ RUN      ] add_test.addNG
-[       OK ] add_test.addNG (0 ms)
-[----------] 2 tests from add_test (0 ms total)
-[==========] 2 tests from 1 test suite ran. (0 ms total)
-[  PASSED  ] 2 tests.
-```
-
-この**即座のフィードバック**こそが、ホスト環境テストの最大の利点です。
-
-## 2.6 ホスト環境とターゲット環境の差異
-
-ホスト環境でテストする際、以下の差異に注意が必要です。
+## 2.4 ホスト環境とターゲット環境の違い
 
 ```mermaid
 graph LR
-    subgraph ホスト [ホスト環境 x86/x64]
-        H1[int: 4バイト]
-        H2[リトルエンディアン]
-        H3[MMU あり]
-        H4[標準ライブラリ 完全版]
+    subgraph Host["🖥️ ホスト（PC / x86_64）"]
+        H_CC["gcc / g++"]
+        H_OS["Linux / macOS / Windows"]
+        H_HW["PC ハードウェア"]
     end
-    subgraph ターゲット [ターゲット環境 ARM Cortex-M等]
-        T1[int: 2 or 4バイト]
-        T2[エンディアン混在の可能性]
-        T3[MMU なし]
-        T4[標準ライブラリ サブセット]
+    subgraph Target["🔌 ターゲット（マイコン / ARM）"]
+        T_CC["arm-none-eabi-gcc"]
+        T_OS["ベアメタル / RTOS"]
+        T_HW["マイコン + ペリフェラル"]
     end
     
-    H1 -.-|要注意| T1
-    H2 -.-|要注意| T2
-    H3 -.-|要注意| T3
-    H4 -.-|要注意| T4
-    
-    style ホスト fill:#e3f2fd
-    style ターゲット fill:#fff3e0
+    style Host fill:#e8f5e9
+    style Target fill:#e3f2fd
 ```
 
-| 差異ポイント | 影響 | 対策 |
-|------------|------|------|
-| 整数型のサイズ | `int` が 2byte と 4byte で異なる動作 | `stdint.h` の固定幅型を使用 |
-| エンディアン | バイトオーダーの違いで通信データが壊れる | エンディアン変換マクロを用意 |
-| メモリモデル | ヒープの使い方が異なる | 組み込みでは `malloc` を避ける |
-| ハードウェアアクセス | レジスタ操作がホストにない | モック/スタブで置き換え |
-| 割り込み | ホストにはない | テスト用の割り込みシミュレータを用意 |
+| 項目 | ホスト | ターゲット |
+|------|--------|------------|
+| コンパイラ | gcc / g++ | arm-none-eabi-gcc 等 |
+| アーキテクチャ | x86_64 | ARM Cortex-M 等 |
+| OS | Linux / macOS / Windows | ベアメタル / RTOS |
+| メモリ | 数GB | 数KB〜数MB |
+| ペリフェラル | なし | ADC, GPIO, UART, SPI... |
+| テスト方法 | Google Test + FFF | 手動 / JTAG |
 
-**重要**: ホスト環境テストは万能ではありません。ロジックのテストには最適ですが、タイミングやハードウェア固有の挙動はターゲット環境でのテストが必要です。
+### 意識すべき差異
+
+- **型サイズ**: `int` がホストでは32bit/64bit、ターゲットでは16bit/32bitの場合がある。`stdint.h`（`uint16_t` 等）を使うことで差異を吸収。
+- **エンディアン**: ホストはリトルエンディアンだがターゲットがビッグエンディアンの場合がある。
+- **浮動小数点**: ターゲットにFPUがない場合、浮動小数点演算は避ける → 本教材では整数演算（×10 表現）を使用。
+- **アラインメント**: 構造体のパディングが異なる場合がある。
+
+## 2.5 ビルドと実行
+
+```bash
+# 1. ビルドディレクトリ作成
+mkdir build && cd build
+
+# 2. CMake 設定
+cmake ..
+
+# 3. ビルド
+cmake --build .
+
+# 4. テスト実行
+ctest --output-on-failure
+```
+
+実行結果（全16テストがパス）:
+
+```
+100% tests passed, 0 tests failed out of 16
+```

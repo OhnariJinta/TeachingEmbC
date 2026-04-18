@@ -1,236 +1,186 @@
-# 第3章: Google Testの基本 — テストの書き方を学ぶ
+# 第3章: Google Test の基本
 
-## 3.1 Google Testとは
+## 3.1 Google Test とは
 
-Google Test（gtest）は、Googleが開発したC++用テストフレームワークです。組み込みCのテストでは、テストコードをC++で書き、テスト対象のCコードをリンクして使います。
+Google Test は C++ 用のテストフレームワークです。組み込みC のコードを `extern "C"` で囲むことで、C 関数を C++ テストから呼び出せます。
 
-### なぜC++のフレームワークでCをテストするのか
+### extern "C" と名前マングリング
 
-```mermaid
-graph TD
-    A[C言語のプロダクションコード] -->|extern C で公開| B[C++テストコード]
-    B -->|リンク| C[Google Test フレームワーク]
-    C --> D[テスト実行バイナリ]
-    
-    style A fill:#fff3e0
-    style B fill:#e8f5e9
-    style C fill:#e3f2fd
-    style D fill:#f3e5f5
+C++ コンパイラは関数名を「名前マングリング」で装飾します。例えば `add(int, int)` は `_Z3addii` のような名前になります。C コンパイラはこの装飾をしないため、`extern "C"` で「この関数はC言語の命名規則で探してね」と指示する必要があります。
+
+```cpp
+// ❌ これだと C 関数が見つからない（リンクエラー）
+#include "temperature.h"
+
+// ✅ extern "C" で C の命名規則を指定
+extern "C" {
+#include "temperature.h"
+}
 ```
 
-C言語にはテストフレームワークも存在しますが（CUnit、Unity等）、Google Testを使う理由は以下の通りです。
+## 3.2 テストの基本構造
 
-| 特徴 | Google Test | CUnit/Unity |
-|------|------------|-------------|
-| モック機能 | 豊富（GMock, FFF連携） | 限定的 |
-| テスト自動検出 | あり（マクロで自動登録） | 手動登録が必要 |
-| IDE連携 | 優れている | 限定的 |
-| CI/CD連携 | CTest/CDashと統合 | 追加設定が必要 |
-| 情報量 | 多い（ドキュメント・コミュニティ） | 少なめ |
-
-## 3.2 テストの構造
-
-Google Testのテストは、以下の3つの要素で構成されます。
-
-### テストケース、テストスイート、アサーション
-
-```mermaid
-graph TD
-    TS[テストスイート<br>add_test] --> TC1[テストケース<br>addOK]
-    TS --> TC2[テストケース<br>addNG]
-    TC1 --> A1[アサーション<br>EXPECT_EQ 3, add 1,2]
-    TC1 --> A2[アサーション<br>EXPECT_EQ call_count, 1]
-    TC2 --> A3[アサーション<br>EXPECT_EQ call_count, 0]
-    TC2 --> A4[アサーション<br>EXPECT_NE 5, add 1,2]
-    
-    style TS fill:#e3f2fd
-    style TC1 fill:#e8f5e9
-    style TC2 fill:#e8f5e9
-    style A1 fill:#fff8e1
-    style A2 fill:#fff8e1
-    style A3 fill:#fff8e1
-    style A4 fill:#fff8e1
-```
-
-- **テストスイート**: 関連するテストケースをまとめるグループ（例: `add_test`）
-- **テストケース**: 個々のテスト項目（例: `addOK`, `addNG`）
-- **アサーション**: テスト内での検証（例: `EXPECT_EQ(3, add(1,2))`）
-
-## 3.3 基本的なテストの書き方
-
-### 最もシンプルなテスト（TEST マクロ）
+### TEST マクロ（最もシンプル）
 
 ```cpp
 #include "gtest/gtest.h"
 
 extern "C" {
-#include "add.h"
+#include "temperature.h"
 }
 
-TEST(AddTest, PositiveNumbers) {
-    EXPECT_EQ(3, add(1, 2));
-}
-
-TEST(AddTest, NegativeNumbers) {
-    EXPECT_EQ(-3, add(-1, -2));
+TEST(TemperatureConvert, ZeroInput) {
+    EXPECT_EQ(0, temperature_convert(0));
 }
 ```
 
-**`extern "C"`** は、C++コンパイラに「この中のヘッダはC言語の規約に従う」と伝えるための宣言です。
+- 第1引数: テストスイート名（機能や関数の名前）
+- 第2引数: テストケース名（テストの目的）
 
-C++コンパイラは、関数のオーバーロード（同じ名前で引数が異なる関数）を区別するために、コンパイル時に関数名を内部的に変換します。この処理を**名前マングリング**と呼びます。例えば、`add(int, int)` は `_Z3addii` のような名前に変換されます。しかしCコンパイラはこのような変換を行わないため、`add` という名前のままオブジェクトファイルに記録します。`extern "C"` を使わないと、C++側では `_Z3addii` を探しているのにCの `add` しか存在せず、リンクエラーになります。
+### TEST_F マクロ（フィクスチャ付き）
 
-### `extern "C"` の仕組み
-
-```mermaid
-graph LR
-    subgraph C++の世界
-        CPP[test_app.cpp]
-        CPP -->|extern C| LINK
-    end
-    subgraph Cの世界
-        CH[add.h]
-        CC[add.c]
-        CC --> OBJ[add.o]
-    end
-    LINK[リンカ] --> OBJ
-    LINK --> EXE[テスト実行バイナリ]
-    
-    style CPP fill:#e8f5e9
-    style CH fill:#fff3e0
-    style CC fill:#fff3e0
-```
-
-## 3.4 フィクスチャを使ったテスト（TEST_F マクロ）
-
-テストケースが増えると、共通の初期化処理が必要になります。例えば、テスト対象の関数が他の関数に依存している場合、その依存関数の状態を毎回リセットする必要があります。このような**共通のセットアップ処理**をまとめるのが**フィクスチャ**です。
-
-### フィクスチャの実行フロー
-
-```mermaid
-sequenceDiagram
-    participant F as フィクスチャ
-    participant T1 as テストケース1
-    participant T2 as テストケース2
-
-    F->>F: SetUp() 初期化
-    F->>T1: addOK テスト実行
-    T1->>F: 結果返却
-    F->>F: TearDown() 後始末
-
-    F->>F: SetUp() 初期化
-    F->>T2: addNG テスト実行
-    T2->>F: 結果返却
-    F->>F: TearDown() 後始末
-```
-
-**重要**: `SetUp()` と `TearDown()` は**各テストケースの前後に毎回実行**されます。テスト間の状態が互いに影響しないことが保証されます。
-
-### 本プロジェクトでの実例
-
-> **補足**: この例では `fff.h`、`DEFINE_FFF_GLOBALS`、`FAKE_VOID_FUNC` というFFF（Fake Function Framework）の機能を使っています。FFFの詳細は次の第4章で解説しますが、ここでは「`add()` が内部で呼んでいる `doubleForFake()` をテスト用の偽物に置き換えている」とだけ理解してください。
+複数テストで共通の初期化・後始末が必要な場合に使います。
 
 ```cpp
-// test_app.cpp
-#include "gtest/gtest.h"
-#include "fff.h"                  // FFF を利用（詳細は第4章で解説）
-DEFINE_FFF_GLOBALS;               // FFF のグローバル変数定義（第4章で解説）
-
-extern "C" {
-#include "../src/APP/INC/add.h"
-#include "../src/DRV/INC/sub.h"
-}
-
-// doubleForFake をフェイク関数として定義
-FAKE_VOID_FUNC(doubleForFake, int *);
-
-class add_test : public ::testing::Test {
+class TemperatureConvertTest : public ::testing::Test {
 protected:
-    virtual void SetUp() {
-        // 各テストの前にフェイク関数の呼び出し回数をリセット
-        doubleForFake_fake.call_count = 0;
+    void SetUp() override {
+        // 各テスト前に呼ばれる
     }
-    virtual void TearDown() {
-        // 後始末（今回は特に処理なし）
+    void TearDown() override {
+        // 各テスト後に呼ばれる
     }
 };
 
-TEST_F(add_test, addOK) {
-    EXPECT_EQ(3, add(1, 2));       // add(1,2) の結果が 3 であること
-    EXPECT_EQ(doubleForFake_fake.call_count, 1); // doubleForFake が1回呼ばれたこと
+TEST_F(TemperatureConvertTest, ZeroRawReturnsZero) {
+    EXPECT_EQ(0, temperature_convert(0));
 }
 
-TEST_F(add_test, addNG) {
-    EXPECT_EQ(doubleForFake_fake.call_count, 0); // まだ呼ばれていないこと
-    EXPECT_NE(5, add(1, 2));       // add(1,2) の結果が 5 ではないこと
+TEST_F(TemperatureConvertTest, MaxRawValue) {
+    EXPECT_EQ(330, temperature_convert(4095));
 }
 ```
-
-## 3.5 アサーションの種類
-
-Google Test には2種類のアサーションがあります。
-
-| アサーション | 失敗時の動作 | 使いどころ |
-|------------|-----------|----------|
-| `EXPECT_*` | テストを続行する | 一般的に使用。複数の検証を1テストで行う場合 |
-| `ASSERT_*` | テストを即座に中断する | 後続の検証が意味をなさない場合 |
-
-### よく使うアサーション一覧
-
-| マクロ | 意味 | 使用例 |
-|-------|------|-------|
-| `EXPECT_EQ(expected, actual)` | 等しい | `EXPECT_EQ(3, add(1,2))` |
-| `EXPECT_NE(val1, val2)` | 等しくない | `EXPECT_NE(5, add(1,2))` |
-| `EXPECT_TRUE(condition)` | 真である | `EXPECT_TRUE(isReady())` |
-| `EXPECT_FALSE(condition)` | 偽である | `EXPECT_FALSE(hasError())` |
-| `EXPECT_LT(val1, val2)` | val1 < val2 | `EXPECT_LT(0, getCount())` |
-| `EXPECT_LE(val1, val2)` | val1 <= val2 | `EXPECT_LE(result, MAX)` |
-| `EXPECT_GT(val1, val2)` | val1 > val2 | `EXPECT_GT(size, 0)` |
-| `EXPECT_GE(val1, val2)` | val1 >= val2 | `EXPECT_GE(count, 1)` |
-
-### EXPECT vs ASSERT の使い分け
 
 ```mermaid
-graph TD
-    A[アサーション失敗] --> B{後続の検証は<br>意味があるか？}
-    B -->|意味がある| C[EXPECT_* を使用<br>テストを続行して<br>複数の問題を一度に発見]
-    B -->|意味がない| D[ASSERT_* を使用<br>テストを即座に中断して<br>無意味な検証を避ける]
+sequenceDiagram
+    participant GTest as Google Test
+    participant SetUp as SetUp()
+    participant TC as テストケース
+    participant TearDown as TearDown()
     
-    style C fill:#e8f5e9
-    style D fill:#ffebee
+    GTest->>SetUp: テスト前に呼び出し
+    SetUp->>TC: 初期化完了
+    TC->>TC: EXPECT_EQ 等でアサーション
+    TC->>TearDown: テスト完了
+    TearDown->>GTest: 後始末完了
+    Note over GTest: 次のテストケースへ
 ```
 
-**例**: ポインタが NULL でないことを確認してから、その中身をチェックする場合
+## 3.3 主要なアサーションマクロ
+
+| マクロ | 意味 | 失敗時の動作 |
+|--------|------|-------------|
+| `EXPECT_EQ(expected, actual)` | 等しい | テスト続行 |
+| `EXPECT_NE(val1, val2)` | 等しくない | テスト続行 |
+| `EXPECT_GT(val1, val2)` | val1 > val2 | テスト続行 |
+| `EXPECT_GE(val1, val2)` | val1 >= val2 | テスト続行 |
+| `EXPECT_LT(val1, val2)` | val1 < val2 | テスト続行 |
+| `EXPECT_LE(val1, val2)` | val1 <= val2 | テスト続行 |
+| `EXPECT_TRUE(condition)` | 真 | テスト続行 |
+| `EXPECT_FALSE(condition)` | 偽 | テスト続行 |
+| `ASSERT_EQ(expected, actual)` | 等しい | **テスト中断** |
+
+> **EXPECT vs ASSERT**: `EXPECT_*` は失敗してもテストを続行し、全ての失敗を報告します。`ASSERT_*` は失敗した時点でテストを中断します。
+
+## 3.4 実例: 純粋関数のテスト
+
+本プロジェクトの `test_app.cpp`（test_temperature）は純粋関数のみをテストしています。
 
 ```cpp
-ASSERT_NE(nullptr, ptr);   // NULL なら後続は無意味なので ASSERT
-EXPECT_EQ(42, ptr->value); // ここは ASSERT の後なので安全
+#include "gtest/gtest.h"
+
+extern "C" {
+#include "temperature.h"
+}
+
+class TemperatureConvertTest : public ::testing::Test {};
+
+// ADC 0 → 0mV → 0℃
+TEST_F(TemperatureConvertTest, ZeroRawReturnsZero) {
+    EXPECT_EQ(0, temperature_convert(0));
+}
+
+// ADC 2048 → 約1650mV → 約16.5℃
+TEST_F(TemperatureConvertTest, MidRangeValue) {
+    int16_t result = temperature_convert(2048);
+    EXPECT_GE(result, 160);
+    EXPECT_LE(result, 170);
+}
+
+// ADC 4095 → 3300mV → 33.0℃
+TEST_F(TemperatureConvertTest, MaxRawValue) {
+    EXPECT_EQ(330, temperature_convert(4095));
+}
 ```
 
-## 3.6 テスト設計のポイント
+> **ポイント**: 純粋関数は入力と出力だけを検証すればよいため、フェイクもモックも不要です。これが「テスト容易性」の好例です。
 
-### 良いテストの特徴
-
-良いテストには以下の特徴があります（**F.I.R.S.T.原則**）。
+### テスト設計: 境界値
 
 ```mermaid
 graph LR
-    F[Fast<br>高速] --> I[Independent<br>独立]
-    I --> R[Repeatable<br>再現可能]
-    R --> S[Self-validating<br>自己検証]
-    S --> T[Timely<br>適時]
+    subgraph Boundary["temperature_is_valid の境界値テスト"]
+        V0["0 → 無効❌\n（センサ断線）"]
+        V1["1 → 有効✅"]
+        V4094["4094 → 有効✅"]
+        V4095["4095 → 無効❌\n（センサ短絡）"]
+    end
     
-    style F fill:#e3f2fd
-    style I fill:#e8f5e9
-    style R fill:#fff8e1
-    style S fill:#fce4ec
-    style T fill:#f3e5f5
+    style V0 fill:#ffcdd2
+    style V1 fill:#c8e6c9
+    style V4094 fill:#c8e6c9
+    style V4095 fill:#ffcdd2
 ```
 
-| 原則 | 意味 | 実践 |
-|------|------|------|
-| **Fast** | テストは高速に実行できる | ホスト環境で実行、外部依存を排除 |
-| **Independent** | テスト間に依存がない | SetUp/TearDown で状態をリセット |
-| **Repeatable** | 何度実行しても同じ結果 | 環境に依存しないテスト設計 |
-| **Self-validating** | 結果が自動的に判定される | アサーションで検証 |
-| **Timely** | 実装と同時に書く | TDDではテストを先に書く |
+```cpp
+TEST_F(TemperatureIsValidTest, ZeroIsInvalid) {
+    EXPECT_EQ(0, temperature_is_valid(0));
+}
+TEST_F(TemperatureIsValidTest, LowValidValue) {
+    EXPECT_EQ(1, temperature_is_valid(1));
+}
+TEST_F(TemperatureIsValidTest, HighValidValue) {
+    EXPECT_EQ(1, temperature_is_valid(4094));
+}
+TEST_F(TemperatureIsValidTest, MaxIsInvalid) {
+    EXPECT_EQ(0, temperature_is_valid(4095));
+}
+```
+
+## 3.5 FIRST 原則
+
+良いユニットテストの特性:
+
+```mermaid
+graph TD
+    FIRST["FIRST 原則"] --> F["F: Fast\n高速に実行できる"]
+    FIRST --> I["I: Independent\n他のテストに依存しない"]
+    FIRST --> R["R: Repeatable\n何度実行しても同じ結果"]
+    FIRST --> S["S: Self-validating\n結果が自動判定される"]
+    FIRST --> T["T: Timely\n実装前にテストを書く"]
+    
+    style FIRST fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style F fill:#e8f5e9
+    style I fill:#e8f5e9
+    style R fill:#e8f5e9
+    style S fill:#e8f5e9
+    style T fill:#e8f5e9
+```
+
+| 原則 | 説明 | 本教材での実践 |
+|------|------|-------------|
+| Fast | ミリ秒単位で完了 | 16テストが0.04秒で完了 |
+| Independent | テスト間で状態を共有しない | SetUp() で毎回リセット |
+| Repeatable | 環境に依存しない | HAL をフェイク化して環境非依存 |
+| Self-validating | PASS/FAIL が自動判定 | EXPECT_EQ 等で自動チェック |
+| Timely | 実装前にテストを書く | TDD の Red-Green-Refactor |

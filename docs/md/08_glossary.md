@@ -1,48 +1,47 @@
 # 用語集
 
-| 用語 | 英語 | 定義 |
+| 用語 | 英語 | 説明 |
 |------|------|------|
-| アサーション | Assertion | テスト内で期待値と実際値を比較し、結果を検証する文。`EXPECT_EQ`, `ASSERT_TRUE` など |
-| アダプタ | Adapter | ポート（インターフェース）の具体的な実装。本番用とテスト用がある |
-| アプリケーション層 | Application Layer | ビジネスロジックを担当するソフトウェア層。ハードウェアに直接依存しない |
-| エンディアン | Endianness | 複数バイトのデータをメモリに格納する際のバイト順。ビッグエンディアンとリトルエンディアンがある |
-| クロスコンパイラ | Cross Compiler | 開発環境（ホスト）とは異なるターゲット環境向けのバイナリを生成するコンパイラ |
-| スタブ | Stub | テスト時に使用する偽物の関数。固定値を返すだけの最も単純な形態 |
-| スパイ | Spy | 本物の関数を呼び出しつつ、呼び出し情報を記録するテストダブル |
-| ターゲット環境 | Target Environment | 実際の組み込みハードウェア（マイコンボード等）の実行環境 |
-| ダミー | Dummy | 引数や依存を満たすために渡すだけで、実際には使われないオブジェクト |
-| テストケース | Test Case | 1つの検証項目。Google Test では `TEST` または `TEST_F` マクロで定義する |
-| テストスイート | Test Suite | 関連するテストケースをグループ化したもの。フィクスチャクラスに対応 |
-| テストダブル | Test Double | テスト時に使う偽物の総称。スタブ、モック、フェイク、スパイ、ダミーの上位概念 |
-| テスト駆動開発 | Test-Driven Development (TDD) | テストを先に書き、そのテストを通すコードを後から実装する開発手法 |
-| ドライバ層 | Driver Layer | ハードウェアに直接アクセスするソフトウェア層。レジスタ操作やペリフェラル制御を担当 |
-| フィクスチャ | Fixture | テストケース群で共有する初期化・後始末処理。`SetUp()` と `TearDown()` で定義する |
-| フェイク | Fake | テスト時に使用する偽物の関数。簡易的な実装を持ち、本物に近い振る舞いをする |
-| ポート | Port | アプリケーションコアが外部と通信するためのインターフェース。C言語ではヘッダファイルの関数宣言 |
-| ポートアダプタパターン | Port-Adapter Pattern | アプリケーションコアをポート（インターフェース）で囲み、外部依存をアダプタで実装する設計パターン。ヘキサゴナルアーキテクチャとも呼ばれる |
-| ホスト環境 | Host Environment | 開発用PC上のソフトウェア実行環境。テストやデバッグをPC上で行う |
-| モック | Mock | テスト時に使用する偽物の関数。呼び出し回数や引数の検証機能を持つ |
-| リグレッション | Regression | 既存の正しく動作していた機能が、新しい変更によって壊れること |
-| リファクタリング | Refactoring | 外部の振る舞いを変えずに、コードの内部構造を改善すること |
-| 依存性逆転の原則 | Dependency Inversion Principle (DIP) | SOLID原則の1つ。上位モジュールは下位モジュールに依存すべきでなく、両者は抽象に依存すべきという原則 |
-| 依存性注入 | Dependency Injection (DI) | 依存するオブジェクトを外部から渡す設計技法。C言語では関数ポインタで実現 |
-| 単一責任の原則 | Single Responsibility Principle (SRP) | SOLID原則の1つ。モジュールは変更の理由を1つだけ持つべきという原則 |
-| 名前マングリング | Name Mangling | C++コンパイラが関数のオーバーロードを区別するために、関数名を変換する処理。`extern "C"` で抑制する |
-| 境界条件 | Boundary Condition | 入力値の最小値、最大値、0、切り替わり点など、バグが発生しやすい値の条件 |
-| 開放閉鎖の原則 | Open-Closed Principle (OCP) | SOLID原則の1つ。拡張に対して開いており、修正に対して閉じているべきという原則 |
-| 関数ポインタ | Function Pointer | 関数のアドレスを保持する変数。C言語でポリモーフィズム（多態性）を実現するために使用する |
-| Red-Green-Refactor | Red-Green-Refactor | TDDの3ステップサイクル。失敗テスト作成（Red）→テスト通過（Green）→リファクタリング（Refactor） |
-| CI/CD | Continuous Integration / Continuous Delivery | 継続的インテグレーション/継続的デリバリー。コードの変更を自動的にビルド・テスト・デプロイする仕組み |
-| CMake | CMake | クロスプラットフォームのビルドシステムジェネレータ。ビルド手順をプラットフォームに依存しない形で記述できる |
-| CTest | CTest | CMakeに付属するテスト実行ツール。テストの発見と実行、結果のレポートを行う |
-| extern "C" | extern "C" | C++コード内でC言語の関数をリンクするための宣言。名前マングリングを抑制する |
-| FetchContent | FetchContent | CMakeの機能。外部ライブラリをビルド時に自動ダウンロードしてプロジェクトに組み込む |
-| FFF | Fake Function Framework | C/C++向けのフェイク関数生成フレームワーク。ヘッダファイル1つ（fff.h）で利用可能。マクロでフェイク関数を定義し、呼び出し回数や引数の記録、戻り値の制御ができる |
-| FIRST原則 | FIRST Principles | 良いテストの特徴。Fast（高速）、Independent（独立）、Repeatable（再現可能）、Self-validating（自己検証）、Timely（適時） |
-| GMock | Google Mock | Google Testに付属するC++用のモックフレームワーク。C++のクラスに対してモックを生成する。C言語関数のモックには不向きなため、本教材ではFFFを使用 |
-| Google Test | Google Test (gtest) | Googleが開発したC++用テストフレームワーク。豊富なアサーションとテスト管理機能を持つ |
-| HAL | Hardware Abstraction Layer | ハードウェア抽象化層。ハードウェア固有の操作を抽象的なインターフェースで隠蔽する層 |
-| SOLID | SOLID | オブジェクト指向設計の5つの基本原則の頭文字。SRP, OCP, LSP, ISP, DIP。C言語でも適用可能 |
-| ヘキサゴナルアーキテクチャ | Hexagonal Architecture | ポートアダプタパターンの別名。アプリケーションコアを六角形で表現し、各辺にポートとアダプタを配置する構造から名付けられた |
-| バイナリ | Binary | コンパイル・リンク済みの実行可能ファイル。ターゲット環境に転送して実行する |
-| 大規模言語モデル | Large Language Model (LLM) | 大量のテキストデータで学習したAIモデル。GitHub Copilot、ChatGPT、Claude等のコード生成AIの基盤技術 |
+| TDD | Test-Driven Development | テスト駆動開発。テストを先に書き、実装を後から書く開発手法 |
+| Red-Green-Refactor | — | TDDの3ステップ。テスト失敗(赤)→テスト成功(緑)→リファクタリング |
+| Google Test | — | Google製のC++テストフレームワーク。`TEST`, `TEST_F`, `EXPECT_EQ` 等のマクロを提供 |
+| FFF | Fake Function Framework | C/C++用のフェイク関数生成フレームワーク。ヘッダ1つで導入可能 |
+| フェイク | Fake | テスト用の簡易実装。FFFが生成するスタブ+スパイの機能を持つ |
+| スタブ | Stub | 固定値を返すテストダブル。FFFでは `return_val` で設定 |
+| モック | Mock | 期待される呼び出しを事前に設定し、違反を検出するテストダブル |
+| スパイ | Spy | 呼び出しを記録するテストダブル。FFFでは `call_count`, `arg0_val` 等 |
+| テストダブル | Test Double | テスト用の代替実装の総称。フェイク、スタブ、モック、スパイの上位概念 |
+| フィクスチャ | Test Fixture | テストの前提条件（初期化・後始末）を共有する仕組み。`TEST_F` で使用 |
+| アサーション | Assertion | テストの検証ポイント。`EXPECT_EQ`, `ASSERT_TRUE` 等 |
+| 純粋関数 | Pure Function | 同じ入力に対して常に同じ出力を返し、外部状態を変更しない関数 |
+| 副作用 | Side Effect | 関数が外部の状態を変更すること。ハードウェアアクセス、グローバル変数の変更等 |
+| HAL | Hardware Abstraction Layer | ハードウェア抽象化レイヤ。ハードウェアアクセスを関数でラップし、実装を差し替え可能にする |
+| ポートアダプタ | Port-Adapter | ヘキサゴナルアーキテクチャとも呼ばれる。コアロジックと外部依存を分離する設計パターン |
+| ヘキサゴナルアーキテクチャ | Hexagonal Architecture | ポートアダプタパターンの別名。アプリケーションコアを中心に、ポートとアダプタで外部と接続 |
+| SOLID | — | オブジェクト指向設計の5原則。SRP, OCP, LSP, ISP, DIP |
+| SRP | Single Responsibility Principle | 単一責任の原則。関数やモジュールは1つの責任のみ持つ |
+| OCP | Open-Closed Principle | 開放閉鎖の原則。拡張に開いて修正に閉じる |
+| LSP | Liskov Substitution Principle | リスコフの置換原則。基底型を派生型で置換しても正しく動作する |
+| ISP | Interface Segregation Principle | インターフェース分離の原則。不要なインターフェースへの依存を避ける |
+| DIP | Dependency Inversion Principle | 依存性逆転の原則。上位→抽象←下位 の依存関係にする |
+| extern "C" | — | C++からC関数を呼び出すための宣言。名前マングリングを抑制する |
+| 名前マングリング | Name Mangling | C++コンパイラが関数名を装飾する仕組み。オーバーロード等を実現するため |
+| CMake | — | クロスプラットフォームのビルドシステム。`CMakeLists.txt` で設定 |
+| FetchContent | — | CMakeの機能。外部ライブラリ（Google Test等）を自動でダウンロード・ビルド |
+| ADC | Analog-to-Digital Converter | アナログ信号をデジタル値に変換するペリフェラル |
+| GPIO | General Purpose Input/Output | 汎用入出力ピン。LED制御やスイッチ読み取りに使用 |
+| ペリフェラル | Peripheral | マイコンの周辺機器。ADC, GPIO, UART, SPI, I2C 等 |
+| LLM | Large Language Model | 大規模言語モデル。ChatGPT, Claude, GitHub Copilot 等のベースとなるAI |
+| ハルシネーション | Hallucination | AIがもっともらしいが誤った情報を生成すること |
+| FIRST原則 | — | 良いテストの特性。Fast, Independent, Repeatable, Self-validating, Timely |
+| 境界値テスト | Boundary Value Test | 入力の境界（最小値、最大値、閾値前後）をテストする手法 |
+| リファクタリング | Refactoring | 外部動作を変えずにコードの内部構造を改善すること |
+| オーケストレータ | Orchestrator | 複数の関数を組み合わせて処理フローを制御する関数 |
+| ベアメタル | Bare Metal | OSなしでマイコン上で直接動作するソフトウェア |
+| RTOS | Real-Time Operating System | リアルタイムOS。組み込み向けの軽量OS |
+| stdint.h | — | 固定幅整数型（uint8_t, int16_t等）を定義するC標準ヘッダ |
+| volatile | — | コンパイラの最適化を抑制するC言語の修飾子。ハードウェアレジスタアクセスに使用 |
+| クロスコンパイラ | Cross Compiler | ホストと異なるアーキテクチャ向けのコンパイラ（例: arm-none-eabi-gcc） |
+| エンディアン | Endianness | バイトの並び順。リトルエンディアン（x86）とビッグエンディアン |
+| FPU | Floating Point Unit | 浮動小数点演算ユニット。ないMCUでは浮動小数点を避ける |
+| GMock | Google Mock | Google製のモックフレームワーク。C++クラスのモックを自動生成 |

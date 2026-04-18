@@ -1,309 +1,296 @@
-# 第5章: SOLID原則と依存性逆転 — テストしやすい設計とは
+# 第5章: テスト容易性とベストプラクティス
 
-## 5.1 SOLID原則の概要
+## 5.1 悪い例（Before）— テスト困難なコード
 
-SOLID原則は、ソフトウェア設計の5つの基本原則です。組み込みC開発においても、テストしやすく保守しやすいコードを書くために重要です。
+組み込み開発でよく見る「テストできないコード」の典型例を示します。
 
-```mermaid
-graph TD
-    SOLID[SOLID原則] --> S[S: 単一責任の原則<br>Single Responsibility]
-    SOLID --> O[O: 開放閉鎖の原則<br>Open-Closed]
-    SOLID --> L[L: リスコフの置換原則<br>Liskov Substitution]
-    SOLID --> I[I: インターフェース分離の原則<br>Interface Segregation]
-    SOLID --> D[D: 依存性逆転の原則<br>Dependency Inversion]
-    
-    style SOLID fill:#e3f2fd
-    style S fill:#e8f5e9
-    style O fill:#fff8e1
-    style L fill:#fce4ec
-    style I fill:#f3e5f5
-    style D fill:#ffccbc,stroke:#ff5722,stroke-width:3px
-```
-
-本教材では特に**D（依存性逆転の原則：DIP）**に注目しますが、まず各原則を組み込みCの文脈で概観します。
-
-## 5.2 各原則の組み込みCでの適用
-
-### S: 単一責任の原則（SRP）
-
-> 「モジュールは、変更の理由を1つだけ持つべきである」
-
-```mermaid
-graph LR
-    subgraph 悪い例
-        BAD[sensor_manager.c<br>センサー読み取り<br>+ データ変換<br>+ UART送信<br>+ エラーログ]
-    end
-    subgraph 良い例
-        G1[sensor_read.c<br>センサー読み取り]
-        G2[data_convert.c<br>データ変換]
-        G3[uart_send.c<br>UART送信]
-        G4[error_log.c<br>エラーログ]
-    end
-    
-    style BAD fill:#ffebee
-    style G1 fill:#e8f5e9
-    style G2 fill:#e8f5e9
-    style G3 fill:#e8f5e9
-    style G4 fill:#e8f5e9
-```
-
-組み込みCでは、1つの `.c` ファイルに多くの機能を詰め込みがちです。機能ごとにファイルを分割することで、テストが書きやすくなります。
-
-### O: 開放閉鎖の原則（OCP）
-
-> 「拡張に対して開いており、修正に対して閉じているべきである」
-
-```mermaid
-graph TD
-    subgraph 関数ポインタで拡張
-        IF[インターフェース<br>関数ポインタテーブル]
-        IF --> IMPL1[UART実装]
-        IF --> IMPL2[SPI実装]
-        IF --> IMPL3[将来の追加も<br>既存コード変更不要]
-    end
-    
-    style IF fill:#e3f2fd
-    style IMPL1 fill:#e8f5e9
-    style IMPL2 fill:#e8f5e9
-    style IMPL3 fill:#fff8e1
-```
-
-C言語ではインターフェースや継承が言語機能として存在しませんが、**関数ポインタ**を使うことで同様の柔軟性を実現できます。
-
-### L: リスコフの置換原則（LSP）
-
-> 「基底型のオブジェクトを派生型のオブジェクトで置き換えても、プログラムの正しさが保たれるべきである」
-
-C言語ではクラス階層がありませんが、関数ポインタのテーブル（≒インターフェース）を「基底型」と見なせば、どの実装に差し替えても同じ契約を満たすべきという原則が適用できます。
-
-```mermaid
-graph TD
-    subgraph LSPDemo["LSPの適用例"]
-        IF_COMM["通信インターフェース\nvoid send(uint8_t *data, size_t len)\nint receive(uint8_t *buf, size_t max_len)"]
-        UART["UART実装\nsend → UARTレジスタに書き込み\nreceive → UARTバッファから読み取り"]
-        SPI["SPI実装\nsend → SPIレジスタに書き込み\nreceive → SPIバッファから読み取り"]
-        FAKE_COMM["テスト用フェイク\nsend → メモリに記録\nreceive → テストデータを返す"]
-        APP_COMM["アプリケーション\nどの実装でも同じように使える"]
-    end
-    
-    IF_COMM --> UART
-    IF_COMM --> SPI
-    IF_COMM --> FAKE_COMM
-    APP_COMM -->|"同じ契約で呼び出し"| IF_COMM
-    
-    style IF_COMM fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style UART fill:#fff3e0
-    style SPI fill:#fff3e0
-    style FAKE_COMM fill:#f3e5f5
-    style APP_COMM fill:#e8f5e9
-```
-
-**LSPのポイント**: UART版、SPI版、テスト用フェイク、いずれの実装に差し替えても「送信したデータが相手に届く」「受信バッファからデータが読める」という**契約**が守られる必要があります。
-
-### I: インターフェース分離の原則（ISP）
-
-> 「クライアントが使わないメソッドに依存させてはならない」
-
-```mermaid
-graph TD
-    subgraph 悪い例
-        FAT[巨大ヘッダ<br>hal.h<br>GPIO + UART + SPI + I2C + ADC]
-        C1[gpio_app.c] --> FAT
-        C2[uart_app.c] --> FAT
-    end
-    subgraph 良い例
-        H1[hal_gpio.h]
-        H2[hal_uart.h]
-        H3[hal_spi.h]
-        C3[gpio_app.c] --> H1
-        C4[uart_app.c] --> H2
-    end
-    
-    style FAT fill:#ffebee
-    style H1 fill:#e8f5e9
-    style H2 fill:#e8f5e9
-    style H3 fill:#e8f5e9
-```
-
-組み込みCでは、HAL（Hardware Abstraction Layer）のヘッダを機能ごとに分割することが、この原則に相当します。
-
-### D: 依存性逆転の原則（DIP）
-
-> 「上位モジュールは下位モジュールに依存すべきではない。両者は抽象に依存すべきである」
-
-この原則は、テスト可能な組み込みコード設計の**核心**です。
-
-## 5.3 依存性逆転の原則（DIP）を深掘りする
-
-### DIPが解決する問題
-
-従来の組み込み設計では、アプリケーション層がドライバ層に直接依存しています。
-
-```mermaid
-graph TD
-    subgraph DIPなし - 従来の設計
-        APP1[APP層<br>add.c] -->|直接依存| DRV1[DRV層<br>drv1.c]
-        DRV1 -->|直接アクセス| HW1[ハードウェア]
-    end
-    
-    style APP1 fill:#e8f5e9
-    style DRV1 fill:#ffebee
-    style HW1 fill:#ffcdd2
-```
-
-この構造では、APP層をテストするにはDRV層（さらにはハードウェア）が必要になります。
-
-### DIPの適用後
-
-```mermaid
-graph TD
-    subgraph DIPあり - 逆転した設計
-        APP2[APP層<br>add.c] -->|抽象に依存| IF2[抽象<br>インターフェース<br>関数宣言ヘッダ]
-        DRV2[DRV層<br>drv1.c] -->|抽象を実装| IF2
-        FAKE2[フェイク<br>テスト用実装] -->|抽象を実装| IF2
-    end
-    
-    style APP2 fill:#e8f5e9
-    style IF2 fill:#e3f2fd,stroke:#1565c0,stroke-width:3px
-    style DRV2 fill:#fff3e0
-    style FAKE2 fill:#f3e5f5
-```
-
-**依存の方向が逆転**しています。APP層は「抽象（ヘッダ＝インターフェース）」に依存し、DRV層もフェイクも同じ抽象を実装します。これにより、テスト時はフェイクに、本番時は実ドライバに切り替え可能になります。
-
-### 本プロジェクトでのDIP
-
-本プロジェクトのコードを見てみましょう。
-
-```mermaid
-graph TD
-    subgraph sub.h が抽象として機能
-        ADDH[add.h<br>int add int a, int b]
-        SUBH[sub.h<br>int sub int a, int b<br>void doubleForFake int *a]
-    end
-    
-    subgraph 実装
-        ADDC[add.c<br>add の実装<br>doubleForFake を呼ぶ]
-        DRV1C[drv1.c<br>sub の実装<br>doubleForFake の実装]
-    end
-    
-    subgraph テスト用フェイク
-        FAKE_DFF[FAKE_VOID_FUNC<br>doubleForFake, int*]
-        FAKE_ADD[FAKE_VALUE_FUNC<br>int, add, int, int]
-    end
-    
-    ADDC -->|依存| SUBH
-    DRV1C -->|実装| SUBH
-    FAKE_DFF -->|フェイク実装| SUBH
-    FAKE_ADD -->|フェイク実装| ADDH
-    
-    style SUBH fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style ADDH fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style ADDC fill:#e8f5e9
-    style DRV1C fill:#fff3e0
-    style FAKE_DFF fill:#f3e5f5
-    style FAKE_ADD fill:#f3e5f5
-```
-
-- `sub.h` にはインターフェース（関数宣言）のみが記述されています
-- `drv1.c` は本番用の実装を提供します
-- `FAKE_VOID_FUNC` はテスト用のフェイク実装を提供します
-- `add.c` は `sub.h` のインターフェースに依存し、具体的な実装には依存しません
-
-## 5.4 C言語でのDIP実現パターン
-
-C言語にはインターフェースの概念がありませんが、以下の方法でDIPを実現できます。
-
-### パターン1: ヘッダファイルによる宣言と分離
-
-最もシンプルなパターン。ヘッダに宣言だけを書き、実装は別ファイルに分ける。リンク時にどの実装を使うかを切り替えます。
-
-```mermaid
-graph TD
-    H[driver_if.h<br>void write_register uint32_t addr, uint32_t val] 
-    REAL[driver_real.c<br>本番用実装<br>実レジスタに書き込み]
-    FAKE[driver_fake.c<br>テスト用実装<br>メモリに書き込み]
-    
-    H -->|実装| REAL
-    H -->|実装| FAKE
-    APP[app.c] -->|インクルード| H
-    
-    style H fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style REAL fill:#fff3e0
-    style FAKE fill:#f3e5f5
-    style APP fill:#e8f5e9
-```
-
-本プロジェクトのFFFによるフェイクも、実質的にこのパターンを使っています。
-
-### パターン2: 関数ポインタによる実行時切り替え
+### ❌ Before: bad_temp.c
 
 ```c
-// インターフェース定義
-typedef struct {
-    void (*write)(uint32_t addr, uint32_t val);
-    uint32_t (*read)(uint32_t addr);
-} DriverInterface;
+/* グローバル変数 */
+volatile uint16_t g_last_raw_adc = 0;
+volatile int16_t g_last_temperature = 0;
+volatile uint8_t g_alarm_active = 0;
 
-// アプリケーション層 — 抽象に依存
-void app_process(const DriverInterface *drv) {
-    drv->write(0x1000, 0xFF);
-    uint32_t val = drv->read(0x1000);
+void bad_read_and_check_temp(void) {
+    // ❌ 直接ハードウェアレジスタにアクセス → ホストで実行不可
+    ADC1->CR2 |= ADC_CR2_SWSTART;
+    while (!(ADC1->SR & ADC_SR_EOC)) {}
+    g_last_raw_adc = ADC1->DR;
+
+    // ❌ ロジックとハードウェアが混在
+    int32_t mv = (int32_t)g_last_raw_adc * 3300 / 4095;
+    g_last_temperature = (int16_t)(mv / 10);
+
+    // ❌ 閾値チェックと GPIO 制御が一体化
+    if (g_last_temperature > 500) {
+        GPIOA->ODR |= (1 << 13);   // 直接レジスタアクセス
+        g_alarm_active = 1;
+    } else {
+        GPIOA->ODR &= ~(1 << 13);
+        g_alarm_active = 0;
+    }
 }
 ```
 
-このパターンでは、実行時にインターフェースの実装を差し替えることができます。テスト時にはフェイクの実装を渡し、本番時には実ドライバの実装を渡します。
+### この悪いコードの問題点
 
-### パターン3: コンパイルスイッチによる切り替え
-
-```c
-#ifdef UNIT_TEST
-    #include "driver_fake.h"
-#else
-    #include "driver_real.h"
-#endif
+```mermaid
+graph TD
+    BAD["bad_read_and_check_temp()"] --> P1["❌ 直接レジスタアクセス\nADC1->CR2, GPIOA->ODR"]
+    BAD --> P2["❌ グローバル変数\ng_last_raw_adc 等"]
+    BAD --> P3["❌ ロジック混在\n変換 + 判定 + 制御"]
+    BAD --> P4["❌ テスト不可\nホストに ADC/GPIO がない"]
+    
+    P1 --> R1["移植性ゼロ"]
+    P2 --> R2["テスト間の干渉"]
+    P3 --> R3["バグの切り分け困難"]
+    P4 --> R4["実機でしかテストできない"]
+    
+    style BAD fill:#ffcdd2,stroke:#c62828,stroke-width:2px
+    style P1 fill:#ffcdd2
+    style P2 fill:#ffcdd2
+    style P3 fill:#ffcdd2
+    style P4 fill:#ffcdd2
 ```
 
-最も原始的なパターンですが、既存コードへの導入が容易です。
+## 5.2 良い例（After）— テスト容易な設計
 
-### どのパターンを選ぶべきか
+### ✅ After: 3つのレイヤに分離
 
-| パターン | 利点 | 欠点 | 適した場面 |
-|---------|------|------|----------|
-| パターン1: ヘッダ分離 | シンプル、既存コードに適用しやすい | 実行時に切り替えできない | 組み込みCの多くの場面。FFFとの相性が良い |
-| パターン2: 関数ポインタ | 実行時に切り替え可能 | コードが複雑になる | プラグイン的な拡張が必要な場合 |
-| パターン3: コンパイルスイッチ | 最も導入が容易 | 条件分岐が増えると保守困難 | 既存コードへの一時的な対応 |
+```mermaid
+graph TD
+    subgraph After["✅ ベストプラクティス適用後"]
+        PURE["純粋関数（テスト容易）\ntemperature_convert()\ntemperature_is_over()\ntemperature_is_valid()"]
+        ORCH["オーケストレータ\ntemp_monitor_execute()"]
+        HAL_LAYER["HAL関数（副作用を封じ込め）\nhal_adc_read()\nhal_gpio_write()"]
+    end
+    
+    ORCH --> PURE
+    ORCH --> HAL_LAYER
+    
+    style PURE fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style ORCH fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style HAL_LAYER fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+```
 
-本教材のプロジェクトでは**パターン1（ヘッダ分離）**を採用しています。その理由は以下の通りです。
+### ✅ After: temperature.c（純粋関数）
 
-1. **FFFとの相性が良い**: FFFは同じ関数名のフェイクをマクロで生成するため、ヘッダ分離パターンと自然に組み合わせられる
-2. **組み込みCの慣習に合致**: 多くの組み込みプロジェクトでは既にヘッダとソースを分離しており、追加の設計変更が不要
-3. **学習コストが低い**: 関数ポインタのパターンは強力だが、C言語初心者には理解が難しい
+```c
+/* 純粋関数: 入力→出力のみ、副作用なし */
+int16_t temperature_convert(uint16_t raw_adc) {
+    int32_t mv = (int32_t)raw_adc * 3300 / 4095;
+    return (int16_t)(mv / 10);
+}
 
-## 5.5 DIPとテストの関係
+int temperature_is_over(int16_t temp_x10, int16_t threshold_x10) {
+    return (temp_x10 > threshold_x10) ? 1 : 0;
+}
 
-DIPの適用度合いによって、テストの容易さが変わります。
+int temperature_is_valid(uint16_t raw_adc) {
+    if (raw_adc == 0 || raw_adc >= 4095) {
+        return 0;
+    }
+    return 1;
+}
+```
+
+### ✅ After: temp_monitor.c（オーケストレータ）
+
+```c
+int16_t temp_monitor_execute(void) {
+    uint16_t raw = hal_adc_read(TEMP_ADC_CHANNEL);  /* 副作用 */
+    
+    if (!temperature_is_valid(raw)) {                 /* 純粋関数 */
+        hal_gpio_write(ALARM_LED_PIN, 1);             /* 副作用 */
+        return -9999;
+    }
+    
+    int16_t temp = temperature_convert(raw);          /* 純粋関数 */
+    int over = temperature_is_over(temp, ALARM_THRESHOLD_X10); /* 純粋関数 */
+    hal_gpio_write(ALARM_LED_PIN, (uint8_t)over);     /* 副作用 */
+    
+    return temp;
+}
+```
+
+## 5.3 Before vs After 比較
+
+| 項目 | ❌ Before | ✅ After |
+|------|-----------|----------|
+| ハードウェアアクセス | 直接レジスタ操作 | HAL 関数経由 |
+| グローバル変数 | 3つ使用 | なし（引数と戻り値で受け渡し） |
+| 関数の責務 | 1関数に全部入り | 変換、判定、制御を分離 |
+| テスト方法 | 実機でしかテスト不可 | ホストで全テスト可能 |
+| 移植性 | STM32 専用 | HAL 差し替えで任意のMCU対応 |
+| テスト数 | 0 | 16 |
+
+## 5.4 純粋関数 vs 副作用 — 詳細
+
+### 純粋関数の特徴
 
 ```mermaid
 graph LR
-    subgraph テストの容易さ
-        L1[低い] --> L2[中程度] --> L3[高い]
-    end
-    subgraph DIPの適用度合い
-        D1[直接依存<br>ハードウェアに直接アクセス] --> D2[ヘッダ分離<br>ヘッダでインターフェース定義]
-        D2 --> D3[関数ポインタ<br>実行時にインターフェース切り替え]
-    end
+    INPUT["入力\n(引数)"] --> FUNC["純粋関数\nf(x) → y"]
+    FUNC --> OUTPUT["出力\n(戻り値)"]
     
-    D1 -.-> L1
-    D2 -.-> L2
-    D3 -.-> L3
+    NOTE["✅ 同じ入力 → 常に同じ出力\n✅ 外部状態を変更しない\n✅ テストが非常に簡単"]
     
-    style L1 fill:#ffebee
-    style L2 fill:#fff8e1
-    style L3 fill:#e8f5e9
-    style D1 fill:#ffebee
-    style D2 fill:#fff8e1
-    style D3 fill:#e8f5e9
+    style FUNC fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style NOTE fill:#f5f5f5,stroke:#999
 ```
 
-本教材のプロジェクトでは、「ヘッダ分離 + FFFによるリンク時切り替え」を採用しています。これは組み込みCにおいて最も実用的なバランスです。
+**テスト方法**: 入力を与えて出力を検証するだけ。
+
+```cpp
+TEST(TemperatureConvert, ZeroInput) {
+    EXPECT_EQ(0, temperature_convert(0));  // これだけ！
+}
+```
+
+### 副作用を持つ関数の特徴
+
+```mermaid
+graph LR
+    INPUT2["入力"] --> FUNC2["副作用あり関数"]
+    FUNC2 --> OUTPUT2["出力"]
+    FUNC2 --> HW["⚠️ ハードウェア変更\nGPIO, ADC..."]
+    FUNC2 --> GLOBAL["⚠️ グローバル変数変更"]
+    
+    NOTE2["⚠️ 実行環境に依存\n⚠️ テストにフェイクが必要\n⚠️ 再現性の確保が困難"]
+    
+    style FUNC2 fill:#fff3e0,stroke:#ef6c00,stroke-width:2px
+    style HW fill:#ffcdd2
+    style GLOBAL fill:#ffcdd2
+    style NOTE2 fill:#f5f5f5,stroke:#999
+```
+
+**テスト方法**: FFF でハードウェア関数をフェイクに差し替え、引数と呼び出し回数を検証。
+
+```cpp
+TEST_F(TempMonitorTest, SensorDisconnected_ReturnsError) {
+    hal_adc_read_fake.return_val = 0;       // フェイクの戻り値を設定
+    int16_t result = temp_monitor_execute(); // テスト実行
+    EXPECT_EQ(result, -9999);               // 出力を検証
+    EXPECT_EQ(hal_gpio_write_fake.arg1_val, 1);  // 副作用を検証
+}
+```
+
+## 5.5 移植性の確保
+
+### HAL によるハードウェア抽象化
+
+```mermaid
+graph TD
+    subgraph App["アプリケーション"]
+        MON["temp_monitor.c"]
+    end
+    subgraph HAL_IF["HAL インターフェース (ヘッダファイル)"]
+        ADC_H2["hal_adc.h"]
+        GPIO_H2["hal_gpio.h"]
+    end
+    subgraph Impl["実装を差し替え"]
+        STM32["STM32 実装\nhal_adc_stm32.c"]
+        NRF["nRF52 実装\nhal_adc_nrf.c"]
+        HOST_IMPL["ホスト実装\n(FFF フェイク)"]
+    end
+    
+    MON --> ADC_H2
+    MON --> GPIO_H2
+    ADC_H2 --> STM32
+    ADC_H2 --> NRF
+    ADC_H2 --> HOST_IMPL
+    GPIO_H2 --> STM32
+    GPIO_H2 --> NRF
+    GPIO_H2 --> HOST_IMPL
+    
+    style App fill:#e3f2fd
+    style HAL_IF fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style Impl fill:#fff3e0
+```
+
+> **ポイント**: アプリケーションコードは HAL ヘッダ（.h）のみに依存。リンク時に実装（.c）を差し替えることで、同じアプリケーションコードが STM32 でも nRF52 でもホストテストでも動作する。
+
+### 移植性を高めるコーディング規約
+
+| 規約 | 理由 | 例 |
+|------|------|-----|
+| `stdint.h` の型を使う | 型サイズの違いを吸収 | `uint16_t` not `unsigned short` |
+| 浮動小数点を避ける | FPU のないMCU対応 | `int16_t temp_x10` (×10表現) |
+| 直接レジスタアクセスしない | 移植性確保 | `hal_adc_read()` not `ADC1->DR` |
+| グローバル変数を避ける | テスト容易性 | 引数と戻り値で受け渡し |
+| `volatile` は HAL 内に限定 | 最適化の影響を限定 | HAL 実装の中だけで使用 |
+
+## 5.6 SOLID 原則（C言語への適用）
+
+### S: 単一責任の原則（SRP）
+
+> 「関数（モジュール）は1つの責任のみを持つべき」
+
+```mermaid
+graph LR
+    subgraph Bad_SRP["❌ Before: 1関数に全部入り"]
+        BAD_F["bad_read_and_check_temp()\n読み取り + 変換 + 判定 + 制御"]
+    end
+    subgraph Good_SRP["✅ After: 責任を分離"]
+        F1["temperature_convert()\n変換のみ"]
+        F2["temperature_is_over()\n判定のみ"]
+        F3["temperature_is_valid()\n検証のみ"]
+        F4["temp_monitor_execute()\n調整のみ"]
+    end
+    
+    style Bad_SRP fill:#ffcdd2
+    style Good_SRP fill:#e8f5e9
+```
+
+### O: 開放閉鎖の原則（OCP）
+
+> 「拡張に対して開いていて、修正に対して閉じているべき」
+
+HAL のヘッダを変えずに、新しいターゲットの実装ファイルを追加できる。
+
+### D: 依存性逆転の原則（DIP）
+
+> 「上位モジュールは下位モジュールに依存すべきでない。両者は抽象に依存すべき」
+
+```mermaid
+graph TD
+    subgraph Bad_DIP["❌ Before: 直接依存"]
+        APP_BAD["アプリケーション"] --> HW_BAD["ハードウェア\n(STM32レジスタ)"]
+    end
+    subgraph Good_DIP["✅ After: 抽象に依存"]
+        APP_GOOD["アプリケーション"] --> IF_GOOD["HALインターフェース\n(hal_adc.h)"]
+        IF_GOOD --> HW_GOOD["HAL実装\n(hal_adc_stm32.c)"]
+        IF_GOOD --> FAKE_GOOD["FFF フェイク\n(テスト用)"]
+    end
+    
+    style Bad_DIP fill:#ffcdd2
+    style Good_DIP fill:#e8f5e9
+    style IF_GOOD fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+```
+
+C言語での DIP の実現方法:
+
+| 方法 | 説明 | 本教材の採用 |
+|------|------|-------------|
+| ヘッダ + リンカ差し替え | ヘッダで関数宣言、リンク時に実装を選択 | ✅ 採用 |
+| 関数ポインタ | 実行時に実装を差し替え | 応用例 |
+| コンパイルスイッチ | `#ifdef` でターゲットを切り替え | 補助的に使用 |
+
+## 5.7 リファクタリングの手順
+
+```mermaid
+graph TD
+    STEP1["1️⃣ 純粋関数を抽出\n変換ロジックを独立関数に"] --> STEP2["2️⃣ HALを定義\nハードウェアアクセスをラップ"]
+    STEP2 --> STEP3["3️⃣ グローバル変数を排除\n引数と戻り値に置き換え"]
+    STEP3 --> STEP4["4️⃣ テストを書く\n純粋関数 → FFF統合"]
+    STEP4 --> STEP5["5️⃣ 全テストを実行\n16テスト全パス"]
+    
+    style STEP1 fill:#e8f5e9
+    style STEP2 fill:#e8f5e9
+    style STEP3 fill:#e8f5e9
+    style STEP4 fill:#e3f2fd
+    style STEP5 fill:#c8e6c9
+```
+
+> **ポイント**: リファクタリングは一度に全部やるのではなく、1ステップずつ進めてテストで確認しながら進める。

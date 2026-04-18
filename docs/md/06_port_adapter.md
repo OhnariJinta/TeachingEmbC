@@ -1,264 +1,144 @@
-# 第6章: ポートアダプタパターン — ハードウェア依存を分離する
+# 第6章: ポートアダプタパターン
 
-## 6.1 ポートアダプタパターンとは
+## 6.1 ポートアダプタとは
 
-第5章で学んだ依存性逆転の原則（DIP）を、アーキテクチャレベルに拡張したのが**ポートアダプタパターン**（別名: ヘキサゴナルアーキテクチャ）です。DIPが「依存の方向を逆転させる」という原則だったのに対し、ポートアダプタパターンは「アプリケーションの核心ロジックをポート（インターフェース）で囲み、外部をアダプタ（実装）で接続する」という具体的な構造を提供します。
-
-### 基本構造
+ポートアダプタパターン（別名: ヘキサゴナルアーキテクチャ）は、アプリケーションのコアロジックを外部依存から分離する設計パターンです。
 
 ```mermaid
 graph TD
-    subgraph 外部 [外部の世界]
-        HW[ハードウェア<br>GPIO, UART, SPI...]
-        UI[ユーザー<br>インターフェース]
-        DB[データ保存<br>EEPROM, Flash...]
+    subgraph Core["🎯 アプリケーションコア"]
+        LOGIC["ビジネスロジック\n（純粋関数）"]
+    end
+    subgraph Ports["🔌 ポート（インターフェース）"]
+        PORT_IN["入力ポート\n（ADC読み取り）"]
+        PORT_OUT["出力ポート\n（GPIO制御）"]
+    end
+    subgraph Adapters["🔧 アダプタ（実装）"]
+        ADP_STM["STM32アダプタ"]
+        ADP_NRF["nRF52アダプタ"]
+        ADP_TEST["テスト用フェイク"]
     end
     
-    subgraph アダプタ層 [アダプタ層]
-        A1[GPIOアダプタ]
-        A2[UARTアダプタ]
-        A3[Flashアダプタ]
-    end
+    PORT_IN --> LOGIC
+    LOGIC --> PORT_OUT
+    ADP_STM --> PORT_IN
+    ADP_NRF --> PORT_IN
+    ADP_TEST --> PORT_IN
+    PORT_OUT --> ADP_STM
+    PORT_OUT --> ADP_NRF
+    PORT_OUT --> ADP_TEST
     
-    subgraph ポート [ポート - インターフェース]
-        P1[出力ポート<br>関数宣言ヘッダ]
-        P2[入力ポート<br>コールバック定義]
-    end
-    
-    subgraph コア [アプリケーションコア]
-        CORE[ビジネスロジック<br>ハードウェア非依存]
-    end
-    
-    HW --- A1
-    HW --- A2
-    HW --- A3
-    A1 --- P1
-    A2 --- P1
-    A3 --- P1
-    P1 --- CORE
-    P2 --- CORE
-    
-    style CORE fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px
-    style P1 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style P2 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style A1 fill:#fff3e0
-    style A2 fill:#fff3e0
-    style A3 fill:#fff3e0
-    style HW fill:#ffebee
+    style Core fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style Ports fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style Adapters fill:#fff3e0,stroke:#ef6c00
 ```
 
-### 用語の定義
+## 6.2 本教材での実現
 
-| 用語 | 説明 | C言語での実現 |
-|------|------|-------------|
-| **ポート** | アプリケーションコアが外部と通信するためのインターフェース | 関数宣言を含むヘッダファイル（`.h`） |
-| **アダプタ** | ポートの具体的な実装 | そのヘッダを実装する `.c` ファイル |
-| **アプリケーションコア** | ビジネスロジック本体。外部に依存しない | ポートのヘッダのみをインクルード |
+DIP（第5章）で学んだ原則を、アーキテクチャレベルで適用したものがポートアダプタです。
 
-## 6.2 組み込みCでの適用
+### C言語での対応表
 
-### 従来の設計（ポートアダプタなし）
+| ポートアダプタの概念 | 本教材での実装 | ファイル |
+|--------------------|---------------|---------|
+| アプリケーションコア | 純粋関数群 | `temperature.c` |
+| オーケストレータ | 統合ロジック | `temp_monitor.c` |
+| ポート | HAL ヘッダファイル | `hal_adc.h`, `hal_gpio.h` |
+| 実機アダプタ | HAL 実装 | `hal_adc.c`, `hal_gpio.c` |
+| テストアダプタ | FFF フェイク | `test_drv.cpp` 内 |
+
+### プロジェクト構造との対応
 
 ```mermaid
 graph TD
-    subgraph 問題のある設計
-        APP[app.c<br>温度監視ロジック]
-        APP -->|直接呼び出し| ADC[adc_read 関数<br>ADCレジスタに直接アクセス]
-        APP -->|直接呼び出し| UART[uart_send 関数<br>UARTレジスタに直接アクセス]
-        APP -->|直接呼び出し| GPIO[gpio_set 関数<br>GPIOレジスタに直接アクセス]
+    subgraph CoreFiles["アプリケーションコア"]
+        TEMP_C["temperature.c\n（純粋関数）"]
+        MON_C["temp_monitor.c\n（オーケストレータ）"]
+    end
+    subgraph PortFiles["ポート（インターフェース）"]
+        ADC_H3["hal_adc.h"]
+        GPIO_H3["hal_gpio.h"]
+    end
+    subgraph AdapterFiles["アダプタ（実装）"]
+        ADC_C2["hal_adc.c\n（実機用）"]
+        GPIO_C2["hal_gpio.c\n（実機用）"]
+        TEST_FFF["test_drv.cpp 内の\nFAKE_VALUE_FUNC\n（テスト用）"]
     end
     
-    style APP fill:#ffebee
-    style ADC fill:#ffcdd2
-    style UART fill:#ffcdd2
-    style GPIO fill:#ffcdd2
+    MON_C --> TEMP_C
+    MON_C --> ADC_H3
+    MON_C --> GPIO_H3
+    ADC_H3 -.-> ADC_C2
+    ADC_H3 -.-> TEST_FFF
+    GPIO_H3 -.-> GPIO_C2
+    GPIO_H3 -.-> TEST_FFF
+    
+    style CoreFiles fill:#e8f5e9,stroke:#2e7d32
+    style PortFiles fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style AdapterFiles fill:#fff3e0,stroke:#ef6c00
 ```
 
-この設計では `app.c` がハードウェアに直接依存しており、ホスト環境ではテストできません。
+## 6.3 DIP との関係
 
-### ポートアダプタ適用後
-
-```mermaid
-graph TD
-    subgraph アプリケーションコア
-        APP[app.c<br>温度監視ロジック]
-    end
-    
-    subgraph ポート - ヘッダファイル
-        SENSOR_PORT[sensor_port.h<br>int read_temperature void]
-        COMM_PORT[comm_port.h<br>void send_alert const char *msg]
-        OUTPUT_PORT[output_port.h<br>void set_alarm bool on]
-    end
-    
-    subgraph 本番アダプタ
-        ADC_ADAPTER[adc_adapter.c<br>ADCからの温度読み取り]
-        UART_ADAPTER[uart_adapter.c<br>UARTでのアラート送信]
-        GPIO_ADAPTER[gpio_adapter.c<br>GPIOでのアラーム制御]
-    end
-    
-    subgraph テスト用アダプタ
-        FAKE_SENSOR[fake_sensor.c<br>固定温度値を返す]
-        FAKE_COMM[fake_comm.c<br>送信データを記録]
-        FAKE_OUTPUT[fake_output.c<br>状態を記録]
-    end
-    
-    APP -->|インクルード| SENSOR_PORT
-    APP -->|インクルード| COMM_PORT
-    APP -->|インクルード| OUTPUT_PORT
-    
-    ADC_ADAPTER -.->|実装| SENSOR_PORT
-    UART_ADAPTER -.->|実装| COMM_PORT
-    GPIO_ADAPTER -.->|実装| OUTPUT_PORT
-    
-    FAKE_SENSOR -.->|フェイク実装| SENSOR_PORT
-    FAKE_COMM -.->|フェイク実装| COMM_PORT
-    FAKE_OUTPUT -.->|フェイク実装| OUTPUT_PORT
-    
-    style APP fill:#e8f5e9,stroke:#2e7d32,stroke-width:3px
-    style SENSOR_PORT fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style COMM_PORT fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style OUTPUT_PORT fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style ADC_ADAPTER fill:#fff3e0
-    style UART_ADAPTER fill:#fff3e0
-    style GPIO_ADAPTER fill:#fff3e0
-    style FAKE_SENSOR fill:#f3e5f5
-    style FAKE_COMM fill:#f3e5f5
-    style FAKE_OUTPUT fill:#f3e5f5
-```
-
-## 6.3 本プロジェクトでのポートアダプタ
-
-本プロジェクトの構造を、ポートアダプタの視点で見直してみましょう。
+ポートアダプタパターンは DIP をアーキテクチャ全体に適用したものです。
 
 ```mermaid
-graph TD
-    subgraph アプリケーションコア
-        ADDC[add.c<br>加算ロジック]
-    end
-    
-    subgraph ポート
-        SUBH[sub.h<br>void doubleForFake int *a<br>int sub int a, int b]
-    end
-    
-    subgraph 本番アダプタ
-        DRV1[drv1.c<br>doubleForFake の本番実装]
-    end
-    
-    subgraph テスト用アダプタ - FFF
-        FAKE[FAKE_VOID_FUNC<br>doubleForFake, int*<br>FFF が自動生成]
-    end
-    
-    ADDC -->|インクルード| SUBH
-    DRV1 -.->|実装| SUBH
-    FAKE -.->|フェイク実装| SUBH
-    
-    style ADDC fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-    style SUBH fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style DRV1 fill:#fff3e0
-    style FAKE fill:#f3e5f5
-```
-
-| 要素 | ポートアダプタでの役割 | 本プロジェクトでの対応 |
-|------|---------------------|---------------------|
-| アプリケーションコア | ビジネスロジック | `add.c`（加算処理） |
-| ポート | インターフェース定義 | `sub.h`（関数宣言） |
-| 本番アダプタ | 実際のハードウェア実装 | `drv1.c`（ドライバ実装） |
-| テスト用アダプタ | テスト用のフェイク実装 | FFFマクロによるフェイク |
-
-## 6.4 ポートアダプタ設計のステップ
-
-新しい機能を追加する際の、ポートアダプタを意識した設計手順は以下の通りです。
-
-```mermaid
-graph TD
-    S1[1. ビジネスロジックを特定する<br>何を計算・判断するか] --> S2[2. 外部依存を特定する<br>何がハードウェアに触るか]
-    S2 --> S3[3. ポートを定義する<br>ヘッダファイルに関数宣言を書く]
-    S3 --> S4[4. テスト用アダプタを作る<br>FFFでフェイクを定義]
-    S4 --> S5[5. テストを書く<br>ビジネスロジックをテスト]
-    S5 --> S6[6. ビジネスロジックを実装する<br>テストが通るコードを書く]
-    S6 --> S7[7. 本番アダプタを実装する<br>ハードウェアアクセスの実装]
-    
-    style S1 fill:#e3f2fd
-    style S2 fill:#e3f2fd
-    style S3 fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
-    style S4 fill:#f3e5f5
-    style S5 fill:#e8f5e9
-    style S6 fill:#e8f5e9
-    style S7 fill:#fff3e0
-```
-
-**ポイント**: 本番アダプタ（ハードウェア実装）は**最後に**書きます。ビジネスロジックのテストは、ハードウェアなしでも完了できます。
-
-## 6.5 DIPとポートアダプタの関係
-
-DIP（依存性逆転の原則）とポートアダプタパターンは、同じ問題を異なる抽象度で表現しています。
-
-```mermaid
-graph TD
-    subgraph 原則レベル
-        DIP[DIP<br>依存性逆転の原則<br>上位は下位に依存しない<br>両者は抽象に依存する]
-    end
-    
-    subgraph パターンレベル
-        PA[ポートアダプタパターン<br>コアは外部に依存しない<br>ポートを介して通信する]
-    end
-    
-    subgraph 実装レベル
-        IMPL[C言語での実現<br>ヘッダ = ポート<br>.c ファイル = アダプタ<br>FFF = テスト用アダプタ]
-    end
-    
-    DIP -->|具体化| PA
-    PA -->|具体化| IMPL
+graph LR
+    DIP["DIP\n（設計原則）"] -->|"アーキテクチャに適用"| PA["ポートアダプタ\n（設計パターン）"]
+    PA -->|"C言語で実現"| HAL_PA["HAL + リンカ差し替え"]
     
     style DIP fill:#e3f2fd
     style PA fill:#e8f5e9
-    style IMPL fill:#fff3e0
+    style HAL_PA fill:#fff3e0
 ```
 
-| レベル | 概念 | 説明 |
+| レベル | 概念 | 実装 |
 |--------|------|------|
-| 原則 | DIP | 依存の方向を逆転させる。上位が下位に依存しない |
-| パターン | ポートアダプタ | DIPを構造化したアーキテクチャパターン |
-| 実装 | ヘッダ + FFF | C言語での具体的な実現方法 |
+| 原則 | DIP（依存性逆転） | 上位→抽象←下位 |
+| パターン | ポートアダプタ | コア＋ポート＋アダプタ |
+| 実装 | HAL + リンカ差し替え | ヘッダ(.h) + 実装(.c) 分離 |
 
-## 6.6 AI駆動開発でのポートアダプタ
-
-AIにコード生成を依頼する際、ポートアダプタを意識することで品質が向上します。
-
-### AIへの良い依頼方法
+## 6.4 新しいターゲットへの移植手順
 
 ```mermaid
 graph TD
-    A[1. まずポートを定義<br>ヘッダファイルを自分で書く] --> B[2. テストをAIに依頼<br>このポートに対するテストを書いて]
-    B --> C[3. 実装をAIに依頼<br>このテストが通る実装を書いて]
-    C --> D[4. テストで検証<br>AIの出力をテストで確認]
+    STEP1_PA["1️⃣ HAL ヘッダを確認\nhal_adc.h の関数宣言を確認"] --> STEP2_PA["2️⃣ 新しいアダプタを作成\nhal_adc_nrf.c を新規作成"]
+    STEP2_PA --> STEP3_PA["3️⃣ CMake を修正\n新アダプタをリンク対象に"]
+    STEP3_PA --> STEP4_PA["4️⃣ ホストテストは変更なし\nFFF フェイクはそのまま"]
+    STEP4_PA --> STEP5_PA["5️⃣ ターゲットでビルド\narm-none-eabi-gcc でコンパイル"]
     
-    style A fill:#fff8e1,stroke:#f9a825,stroke-width:2px
-    style B fill:#e8f5e9
-    style C fill:#e8f5e9
-    style D fill:#e3f2fd
+    style STEP1_PA fill:#e3f2fd
+    style STEP2_PA fill:#e8f5e9
+    style STEP3_PA fill:#fff3e0
+    style STEP4_PA fill:#e8f5e9
+    style STEP5_PA fill:#e3f2fd
 ```
 
-**人間が担うべき責任**:
-1. **ポート（インターフェース）の定義** — これはアーキテクチャの判断であり、人間が行う
-2. **テスト設計の方針決定** — 何をテストするかは人間が決める
-3. **生成コードのレビュー** — AIの出力がポートの契約に従っているか確認する
+> **ポイント**: アプリケーションコード（`temperature.c`, `temp_monitor.c`）は一切変更不要。HAL の実装ファイルだけを追加すれば、新しいハードウェアに対応できる。
 
-**AIに委ねてよいこと**:
-1. テストコードのボイラープレート（定型文）
-2. アダプタの実装（ヘッダの関数宣言に合わせた `.c` ファイル）
-3. FFFのフェイク定義
+## 6.5 テスト戦略
 
+```mermaid
+graph TD
+    subgraph TestStrategy["テスト戦略"]
+        L1["レベル1: 純粋関数テスト\n（フェイク不要）"]
+        L2["レベル2: FFF統合テスト\n（HALをフェイク化）"]
+        L3["レベル3: ターゲットテスト\n（実機で結合テスト）"]
+    end
+    
+    L1 -->|"100%ホストで実行"| HOST1["test_temperature\n11テスト"]
+    L2 -->|"100%ホストで実行"| HOST2["test_temp_monitor\n5テスト"]
+    L3 -->|"実機で実行"| TARGET["手動テスト\nJTAGデバッグ"]
+    
+    style L1 fill:#e8f5e9
+    style L2 fill:#e3f2fd
+    style L3 fill:#fff3e0
 ```
-[AIへの依頼例]
-以下のヘッダファイル（ポート）に対して：
-- FFFを使ったフェイクの定義
-- Google Testのフィクスチャ
-- 正常系・異常系のテストケース
-を作成してください。
 
-ヘッダファイル:
-// sensor_port.h
-int read_temperature(void);
-bool is_sensor_ready(void);
-```
+| レベル | 対象 | 方法 | カバー範囲 |
+|--------|------|------|-----------|
+| 純粋関数テスト | `temperature.c` | Google Test のみ | ロジック100% |
+| FFF統合テスト | `temp_monitor.c` | Google Test + FFF | 統合フロー |
+| ターゲットテスト | HAL 実装 | 実機 + JTAG | ハードウェア接続 |
+
+> **目標**: レベル1 と レベル2 でバグの90%以上を検出し、ターゲットテストは最小限にする。
