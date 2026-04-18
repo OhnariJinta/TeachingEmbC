@@ -563,6 +563,23 @@ graph TD
 
 <h2>2.3 CMakeによるビルドシステム</h2>
 
+<h3>CMakeのビルドフロー</h3>
+<div class="mermaid">
+graph TD
+    ROOT["CMakeLists.txt ルート\nプロジェクト設定\nenable_testing"] --> SRC_CMAKE["src/CMakeLists.txt\nプロダクションコードのビルド"]
+    ROOT --> TEST_CMAKE["Test/CMakeLists.txt\nテストコードのビルド"]
+    TEST_CMAKE --> FETCH["FetchContent\nGoogle Test v1.14.0\n自動ダウンロード"]
+    SRC_CMAKE --> PROD_OBJ["add.o, drv1.o\nプロダクションオブジェクト"]
+    FETCH --> GTEST_LIB["gtest ライブラリ"]
+    TEST_CMAKE --> TEST_OBJ["test_app.o, test_drv.o\nテストオブジェクト"]
+    PROD_OBJ --> EXE["テスト実行バイナリ"]
+    GTEST_LIB --> EXE
+    TEST_OBJ --> EXE
+    style ROOT fill:#fff3e0
+    style FETCH fill:#e3f2fd
+    style EXE fill:#e8f5e9
+</div>
+
 <h3>ルート CMakeLists.txt</h3>
 <pre><code>cmake_minimum_required(VERSION 3.29)
 project(MyMixedProject LANGUAGES C CXX)
@@ -1229,6 +1246,28 @@ graph TD
 <h3>L: リスコフの置換原則（LSP）</h3>
 <blockquote>「基底型のオブジェクトを派生型のオブジェクトで置き換えても、プログラムの正しさが保たれるべきである」</blockquote>
 <p>C言語ではクラス階層がありませんが、関数ポインタのテーブル（≒インターフェース）を「基底型」と見なせば、どの実装に差し替えても同じ契約を満たすべきという原則が適用できます。</p>
+
+<div class="mermaid">
+graph TD
+    subgraph LSPDemo["LSPの適用例"]
+        IF_COMM["通信インターフェース\nvoid send(uint8_t *data, size_t len)\nint receive(uint8_t *buf, size_t max_len)"]
+        UART["UART実装\nsend → UARTレジスタに書き込み"]
+        SPI_I["SPI実装\nsend → SPIレジスタに書き込み"]
+        FAKE_C["テスト用フェイク\nsend → メモリに記録"]
+        APP_C["アプリケーション\nどの実装でも同じように使える"]
+    end
+    IF_COMM --> UART
+    IF_COMM --> SPI_I
+    IF_COMM --> FAKE_C
+    APP_C -->|"同じ契約で呼び出し"| IF_COMM
+    style IF_COMM fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style UART fill:#fff3e0
+    style SPI_I fill:#fff3e0
+    style FAKE_C fill:#f3e5f5
+    style APP_C fill:#e8f5e9
+</div>
+
+<p><strong>LSPのポイント</strong>: UART版、SPI版、テスト用フェイク、いずれの実装に差し替えても「送信したデータが相手に届く」「受信バッファからデータが読める」という<strong>契約</strong>が守られる必要があります。</p>
 
 <h3>I: インターフェース分離の原則（ISP）</h3>
 <blockquote>「クライアントが使わないメソッドに依存させてはならない」</blockquote>

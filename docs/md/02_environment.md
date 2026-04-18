@@ -58,6 +58,25 @@ graph TD
 
 ## 2.3 CMakeによるビルドシステム
 
+### CMakeのビルドフロー
+
+```mermaid
+graph TD
+    ROOT["CMakeLists.txt ルート\nプロジェクト設定\nenable_testing"] --> SRC_CMAKE["src/CMakeLists.txt\nプロダクションコードのビルド"]
+    ROOT --> TEST_CMAKE["Test/CMakeLists.txt\nテストコードのビルド"]
+    TEST_CMAKE --> FETCH["FetchContent\nGoogle Test v1.14.0\n自動ダウンロード"]
+    SRC_CMAKE --> PROD_OBJ["add.o, drv1.o\nプロダクションオブジェクト"]
+    FETCH --> GTEST_LIB["gtest ライブラリ"]
+    TEST_CMAKE --> TEST_OBJ["test_app.o, test_drv.o\nテストオブジェクト"]
+    PROD_OBJ --> EXE["テスト実行バイナリ"]
+    GTEST_LIB --> EXE
+    TEST_OBJ --> EXE
+    
+    style ROOT fill:#fff3e0
+    style FETCH fill:#e3f2fd
+    style EXE fill:#e8f5e9
+```
+
 ### ルートCMakeLists.txt
 
 ```cmake
