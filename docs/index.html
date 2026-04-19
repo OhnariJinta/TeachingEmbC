@@ -154,7 +154,7 @@ graph TD
 
 <div class="mermaid">
 graph LR
-    ROOT_CM["CMakeLists.txt ルート\ninclude(CTest)"] --> SRC_CMAKE["src/CMakeLists.txt\nAppLibrary + HalLibrary"]
+    subgraph Host["🖥️ ホスト環境（PC）"]
         GT["Google Test"]
         FFF_H["FFF（フェイク生成）"]
         SRC["Cソースコード"]
